@@ -1,0 +1,72 @@
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background-color: #2b2b2b;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.header-heading{
+  padding-left: 30%;
+}
+
+.app-header h1 {
+  font-size: 20px;
+  margin: 0;
+  color: white;
+}
+
+.header-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.header-btn {
+  margin-left: 10px;
+  padding: 5px 10px;
+  background-color: #3e3e3e;
+  border: none;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.header-btn:hover {
+  background-color: #505050;
+}
+
+.search-input {
+  margin-left: 10px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid #555;
+  background-color: #3e3e3e;
+  color: white;
+  width: 250px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #4b88e4;
+}
+
+.bell-icon {
+  margin-left: 15px;
+  font-size: 24px;
+  color: #fff;
+}
+
+.user-avatar {
+  display: flex;
+  align-items: center;
+  margin-left: 15px;
+  color: white;
+}
+
+.avatar-img {
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
+}
