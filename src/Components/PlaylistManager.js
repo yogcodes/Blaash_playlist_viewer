@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { DndProvider } from "react-dnd";
+import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import PlaylistCard from "./PlaylistCard";
 import { database, auth } from "../firebase/firebaseConfig.js";
 import { get, ref, set } from "firebase/database";
 import {
   signInWithPopup,
-  signInWithRedirect,
   GoogleAuthProvider,
 } from "firebase/auth";
 import "./PlaylistManager.css";
 import { getAccesToken } from "../utls.js";
+
+const ITEM_TYPE = "playlist";  
 
 const PlaylistManager = () => {
   const [playlists, setPlaylists] = useState([]);
@@ -35,12 +36,17 @@ const PlaylistManager = () => {
   const saveLayout = () => {
     if (!auth.currentUser) {
       alert("Please sign in to save the layout.");
+      console.log("User is not authenticated:", auth.currentUser);  
       return;
     }
+
+    
+    console.log("Saving playlists layout:", playlists);  
 
     set(ref(database, `users/${auth.currentUser.uid}/playlists`), playlists)
       .then(() => {
         alert("Layout saved successfully!");
+        localStorage.setItem("playlists", JSON.stringify(playlists));
       })
       .catch((error) => {
         console.error("Error saving layout:", error);
@@ -51,21 +57,40 @@ const PlaylistManager = () => {
   const loadLayout = () => {
     if (!auth.currentUser) {
       alert("Please sign in to load the layout.");
+      console.log("User is not authenticated:", auth.currentUser);  
       return;
     }
+
+    console.log(`Loading playlists layout for user: ${auth.currentUser.uid}`);  
 
     get(ref(database, `users/${auth.currentUser.uid}/playlists`))
       .then((snapshot) => {
         if (snapshot.exists()) {
-          setPlaylists(snapshot.val());
+          const playlistsFromDB = snapshot.val();
+          setPlaylists(playlistsFromDB);
+          console.log("Loaded playlists from Firebase:", playlistsFromDB);
+          localStorage.setItem("playlists", JSON.stringify(playlistsFromDB)); 
         } else {
           alert("No layout found for this user.");
         }
       })
       .catch((error) => {
         console.error("Error loading layout:", error);
+        alert("Failed to load layout.");
       });
   };
+
+
+  useEffect(() => {
+    const storedPlaylists = localStorage.getItem("playlists");
+    if (storedPlaylists) {
+      setPlaylists(JSON.parse(storedPlaylists)); 
+    }
+
+    if (auth.currentUser) {
+      loadLayout(); 
+    }
+  }, []); 
 
   const handleGoogleSignIn = () => {
     if (isLoggingIn) return;
@@ -74,12 +99,12 @@ const PlaylistManager = () => {
     signInWithPopup(auth, googleProvider)
       .then((result) => {
         const credential = GoogleAuthProvider.credentialFromResult(result);
-
         const accessToken = credential.accessToken;
-        console.log("Access Token:", accessToken);
         localStorage.setItem("access_token", accessToken);
         setUser(result.user);
         setIsLoggedIn(true);
+
+        loadLayout(); 
       })
       .catch((error) => {
         console.error("Authentication Error:", error);
@@ -105,17 +130,21 @@ const PlaylistManager = () => {
 
       const data = await response.json();
       if (data.items && data.items.length > 0) {
-        const ytPlaylists = data.items.map((item) => ({
-          id: item.id,
-          title: item.snippet.title,
-          thumbnail: item.snippet.thumbnails.default.url,
-          videos: 0,
-        }));
+        const ytPlaylists = await Promise.all(
+          data.items.map(async (item) => {
+            const playlistId = item.id;
+            const videoCount = await fetchPlaylistVideoCount(accessToken, playlistId);
+            return {
+              id: playlistId,
+              title: item.snippet.title,
+              thumbnail: item.snippet.thumbnails.default.url,
+              videos: videoCount,
+            };
+          })
+        );
+
         setPlaylists([...ytPlaylists]);
         alert("Playlists imported successfully!");
-      } else if (data.error) {
-        console.error("YouTube API Error:", data.error.message);
-        alert(`YouTube API Error: ${data.error.message}`);
       } else {
         alert("No playlists found on YouTube.");
       }
@@ -124,6 +153,22 @@ const PlaylistManager = () => {
       alert("Failed to import playlists from YouTube.");
     } finally {
       setIsLoadingPlaylists(false);
+    }
+  };
+
+  const fetchPlaylistVideoCount = async (accessToken, playlistId) => {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }
+      );
+      const data = await response.json();
+      return data.items ? data.items.length : 0;
+    } catch (error) {
+      console.error("Error fetching video count for playlist:", error);
+      return 0;
     }
   };
 
@@ -139,7 +184,6 @@ const PlaylistManager = () => {
       }
     );
     const data = await response.json();
-    console.log("data.i", data.items);
     const videoCount = data.items ? data.items.length : 0;
 
     setPlaylists((prevPlaylists) =>
@@ -149,6 +193,38 @@ const PlaylistManager = () => {
     );
 
     setVideos(data.items || []);
+  };
+
+  const PlaylistCardComponent = ({ playlist, index }) => {
+    const [, drag] = useDrag({
+      type: ITEM_TYPE,
+      item: { index },
+    });
+
+    const [, drop] = useDrop({
+      accept: ITEM_TYPE,
+      hover: (item) => {
+        if (item.index !== index) {
+          moveCard(item.index, index);
+          item.index = index;
+        }
+      },
+    });
+
+    return (
+      <div
+        className="playlist-card"
+        ref={(node) => drag(drop(node))}  
+        key={playlist.id}
+        onClick={() => handlePlaylistClick(playlist.id)}
+      >
+        <img src={playlist.thumbnail} alt={playlist.title} />
+        <div className="card-details">
+          <h4>{playlist.title}</h4>
+          <p>{playlist.videos} Videos</p>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -164,18 +240,7 @@ const PlaylistManager = () => {
             <div className="main-container">
               <div className="playlist-container">
                 {playlists.map((playlist, index) => (
-                  <div
-                    className="playlist-card"
-                    key={playlist.id}
-                    onClick={() => handlePlaylistClick(playlist.id)}
-                  >
-                    <img src={playlist.thumbnail} alt={playlist.title} />
-                    <div className="card-details">
-                      {console.log("playlist", playlist)}
-                      <h4>{playlist.title}</h4>
-                      <p>{playlist.videos} Videos</p>
-                    </div>
-                  </div>
+                  <PlaylistCardComponent key={playlist.id} playlist={playlist} index={index} />
                 ))}
               </div>
 
